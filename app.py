@@ -266,7 +266,7 @@ def _save_analysis(prompt_mode, prompt_short, prompt_text, prompt_category,
                    scorer_provider, scorer_model, result) -> bool:
     s = get_session()
     try:
-        if prompt_mode == "Create new" and prompt_short:
+        if prompt_mode == "new" and prompt_short:
             existing = s.query(Prompt).filter_by(short_name=prompt_short).first()
             if existing:
                 saved_prompt = existing
@@ -326,15 +326,19 @@ with t1:
         st.markdown(f'<div class="card"><div class="card-header">📋 {L("question_section")}</div>', unsafe_allow_html=True)
 
         prompts_data = _load_prompts()
-        prompt_mode = st.radio(L("question_source"), [L("q_select_existing"), L("q_create_new")],
-                               horizontal=True, label_visibility="collapsed", key="pmode")
+        prompt_mode = st.radio(
+            L("question_source"),
+            options=["existing", "new"],
+            format_func=lambda v: L("q_select_existing") if v == "existing" else L("q_create_new"),
+            horizontal=True, label_visibility="collapsed", key="pmode",
+        )
 
         selected_prompt = None
         prompt_short = ""
         prompt_text = ""
         prompt_category = "general"
 
-        if prompt_mode == L("q_select_existing") and prompts_data:
+        if prompt_mode == "existing" and prompts_data:
             prompt_opts = {f"{p['short_name']} [{p['category']}]": p for p in prompts_data}
             sel = st.selectbox(L("q_choose"), list(prompt_opts.keys()), label_visibility="collapsed")
             selected_prompt = prompt_opts.get(sel)
