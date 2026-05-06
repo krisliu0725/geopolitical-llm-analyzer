@@ -1,4 +1,4 @@
-"""Radar chart visualization — warm palette."""
+"""Radar chart visualization — V2.0 with D5 dimension."""
 
 from __future__ import annotations
 
@@ -32,18 +32,23 @@ LAYOUT_BASE = dict(
 )
 
 CATEGORIES = [
-    "D1: Responsibility",
+    "D1: Blame",
     "D2: Coverage",
-    "D3: Rule Citation",
+    "D3: Rules",
     "D4: Framing",
+    "D5: Lexical",
 ]
+
+VALUE_COLS = ["D1_mean", "D2_mean", "D3_mean", "D4_mean", "D5_mean"]
 
 
 def bias_radar_per_model(profile_df: pd.DataFrame) -> go.Figure:
-    """Overlaid radar chart showing bias profiles for each model."""
+    """Overlaid radar chart showing 5D bias profiles for each model."""
     fig = go.Figure()
     for i, (_, row) in enumerate(profile_df.iterrows()):
-        values = [row["D1_mean"], row["D2_mean"], row["D3_mean"], row["D4_mean"]]
+        values = [row[c] for c in VALUE_COLS if c in row.index]
+        if len(values) != 5:
+            continue
         values_closed = values + [values[0]]
         cats_closed = CATEGORIES + [CATEGORIES[0]]
         color = RADAR_COLORS[i % len(RADAR_COLORS)]
@@ -62,7 +67,7 @@ def bias_radar_per_model(profile_df: pd.DataFrame) -> go.Figure:
 
     fig.update_layout(
         **LAYOUT_BASE,
-        title=dict(text="Bias Dimension Profiles by Model", font=CHART_TITLE_FONT),
+        title=dict(text="Bias Dimension Profiles by Model (5D)", font=CHART_TITLE_FONT),
         polar=dict(
             radialaxis=dict(
                 range=[0, 5],
@@ -79,7 +84,7 @@ def bias_radar_per_model(profile_df: pd.DataFrame) -> go.Figure:
 
 
 def bias_radar_by_alignment(profile_df: pd.DataFrame) -> go.Figure:
-    """Radar chart comparing average bias profiles by alignment group."""
+    """Radar chart comparing average 5D bias profiles by alignment group."""
     alignments = profile_df["Alignment"].unique() if "Alignment" in profile_df.columns else []
 
     fig = go.Figure()
@@ -87,12 +92,9 @@ def bias_radar_by_alignment(profile_df: pd.DataFrame) -> go.Figure:
         subset = profile_df[profile_df["Alignment"] == align]
         if subset.empty:
             continue
-        values = [
-            subset["D1_mean"].mean(),
-            subset["D2_mean"].mean(),
-            subset["D3_mean"].mean(),
-            subset["D4_mean"].mean(),
-        ]
+        values = [subset[c].mean() for c in VALUE_COLS if c in subset.columns]
+        if len(values) != 5:
+            continue
         values_closed = values + [values[0]]
         cats_closed = CATEGORIES + [CATEGORIES[0]]
         color = ALIGNMENT_COLORS.get(align, "hsl(22, 8%, 50%)")
@@ -111,7 +113,7 @@ def bias_radar_by_alignment(profile_df: pd.DataFrame) -> go.Figure:
 
     fig.update_layout(
         **LAYOUT_BASE,
-        title=dict(text="Bias Profile by Model Alignment", font=CHART_TITLE_FONT),
+        title=dict(text="Bias Profile by Model Alignment (5D)", font=CHART_TITLE_FONT),
         polar=dict(
             radialaxis=dict(
                 range=[0, 5],

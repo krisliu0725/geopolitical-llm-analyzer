@@ -1,4 +1,4 @@
-"""Bar chart visualizations for TR and bias scores — warm palette."""
+"""Bar chart visualizations for TRS and GBS scores — V2.0 warm palette."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ BLUE = "hsl(218, 45%, 48%)"
 RED = "hsl(6, 42%, 48%)"
 GREEN = "hsl(155, 32%, 40%)"
 AMBER = "hsl(35, 55%, 46%)"
-DIM_COLORS = [RED, BLUE, GREEN, AMBER]
+PURPLE = "hsl(270, 25%, 45%)"
+DIM_COLORS = [RED, BLUE, GREEN, AMBER, PURPLE]
 
 CHART_FONT = dict(family="system-ui, -apple-system, sans-serif", color="hsl(22, 10%, 20%)")
 CHART_TITLE_FONT = dict(family="system-ui, -apple-system, sans-serif", size=15, color="hsl(22, 10%, 15%)")
@@ -23,9 +24,9 @@ LAYOUT_BASE = dict(
 )
 
 
-def mean_tr_by_model(tr_stats_df: pd.DataFrame) -> go.Figure:
-    """Horizontal bar chart: mean TR score per model with error bars (SD)."""
-    df = tr_stats_df.sort_values("Mean")
+def mean_trs_by_model(trs_stats_df: pd.DataFrame) -> go.Figure:
+    """Horizontal bar chart: mean TRS per model with error bars (SD)."""
+    df = trs_stats_df.sort_values("Mean")
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
@@ -41,8 +42,8 @@ def mean_tr_by_model(tr_stats_df: pd.DataFrame) -> go.Figure:
     )
     fig.update_layout(
         **LAYOUT_BASE,
-        title=dict(text="Mean TR Score by Model (Higher = More Transparent)", font=CHART_TITLE_FONT),
-        xaxis=dict(title="TR Score (1–5)", range=[0.3, 5.7], dtick=1, gridcolor="hsl(38, 15%, 88%)"),
+        title=dict(text="Mean TRS by Model (Higher = More Transparent)", font=CHART_TITLE_FONT),
+        xaxis=dict(title="TRS (1–5)", range=[0.3, 5.7], dtick=1, gridcolor="hsl(38, 15%, 88%)"),
         yaxis=dict(title=None, gridcolor="hsl(38, 15%, 88%)"),
         height=max(250, len(df) * 50),
         margin=dict(l=10, r=80, t=40, b=10),
@@ -51,12 +52,13 @@ def mean_tr_by_model(tr_stats_df: pd.DataFrame) -> go.Figure:
 
 
 def mean_bias_by_model_grouped(bias_stats_df: pd.DataFrame) -> go.Figure:
-    """Grouped bar chart: D1-D4 mean scores per model."""
+    """Grouped bar chart: D1-D5 mean scores per model."""
     dimensions = [
-        ("D1: Responsibility", "D1_mean"),
+        ("D1: Blame", "D1_mean"),
         ("D2: Coverage", "D2_mean"),
-        ("D3: Rule Citation", "D3_mean"),
+        ("D3: Rules", "D3_mean"),
         ("D4: Framing", "D4_mean"),
+        ("D5: Lexical", "D5_mean"),
     ]
 
     fig = go.Figure()
@@ -88,10 +90,10 @@ def mean_bias_by_model_grouped(bias_stats_df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def tr_by_prompt_heatmap(analyses_df: pd.DataFrame) -> go.Figure:
-    """Heatmap: TR scores — rows=models, columns=prompts."""
+def trs_by_prompt_heatmap(analyses_df: pd.DataFrame) -> go.Figure:
+    """Heatmap: TRS scores — rows=models, columns=prompts."""
     pivot = analyses_df.pivot_table(
-        index="model_name", columns="prompt_name", values="tr_score", aggfunc="mean"
+        index="model_name", columns="prompt_name", values="trs", aggfunc="mean"
     )
     if pivot.empty:
         return go.Figure()
@@ -114,18 +116,22 @@ def tr_by_prompt_heatmap(analyses_df: pd.DataFrame) -> go.Figure:
             texttemplate="%{text}",
             textfont={"size": 13},
             colorbar=dict(
-                title="TR Score",
+                title="TRS",
                 tickvals=[1, 2, 3, 4, 5],
                 outlinewidth=0,
             ),
-            hovertemplate="Model: %{y}<br>Prompt: %{x}<br>TR: %{z:.2f}<extra></extra>",
+            hovertemplate="Model: %{y}<br>Prompt: %{x}<br>TRS: %{z:.2f}<extra></extra>",
         )
     )
     fig.update_layout(
         **LAYOUT_BASE,
-        title=dict(text="TR Score Heatmap (Model × Question)", font=CHART_TITLE_FONT),
+        title=dict(text="TRS Heatmap (Model × Question)", font=CHART_TITLE_FONT),
         height=max(250, len(pivot) * 50 + 100),
         xaxis=dict(title=None),
         yaxis=dict(title=None),
     )
     return fig
+
+
+# Backward compat aliases
+mean_tr_by_model = mean_trs_by_model

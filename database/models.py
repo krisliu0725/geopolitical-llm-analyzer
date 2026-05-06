@@ -1,7 +1,7 @@
-"""SQLAlchemy ORM models for the geopolitical LLM analyzer.
+"""SQLAlchemy ORM models for the geopolitical LLM analyzer — V2.0.
 
 Core tables: Prompt (questions), ModelConfig (LLMs being studied),
-Analysis (response text + AI-assigned scores).
+Analysis (response text + AI-assigned 10-dimension scores).
 """
 
 from datetime import datetime, timezone
@@ -58,7 +58,10 @@ class ModelConfig(Base):
 
 
 class Analysis(Base):
-    """One scored response — the central record tying a prompt + model + response + AI scores."""
+    """One scored response — V2.0 with 10 sub-dimensions.
+
+    TRS (T1-T5)  +  GBS (D1-D5)
+    """
 
     __tablename__ = "analyses"
 
@@ -68,14 +71,19 @@ class Analysis(Base):
 
     response_text = Column(Text, nullable=False)
 
-    # TR score: 1.00–5.00, 2 decimal places
-    tr_score = Column(Float, nullable=False)
+    # TRS sub-dimensions (T1–T5), each 1.00–5.00
+    t1_score = Column(Float, nullable=False)
+    t2_score = Column(Float, nullable=False)
+    t3_score = Column(Float, nullable=False)
+    t4_score = Column(Float, nullable=False)
+    t5_score = Column(Float, nullable=False)
 
-    # Bias dimension scores: 1.00–5.00 each
+    # GBS sub-dimensions (D1–D5), each 1.00–5.00
     d1_score = Column(Float, nullable=False)
     d2_score = Column(Float, nullable=False)
     d3_score = Column(Float, nullable=False)
     d4_score = Column(Float, nullable=False)
+    d5_score = Column(Float, nullable=False)
 
     # AI-extracted key phrases with annotations (JSON string)
     key_phrases = Column(Text, nullable=True)
@@ -92,12 +100,26 @@ class Analysis(Base):
     model_config = relationship("ModelConfig", back_populates="analyses")
 
     @property
+    def trs(self) -> float:
+        """TRS = (T1 + T2 + T3 + T4 + T5) / 5"""
+        return round(
+            (self.t1_score + self.t2_score + self.t3_score + self.t4_score + self.t5_score) / 5, 2
+        )
+
+    @property
+    def gbs(self) -> float:
+        """GBS = (D1 + D2 + D3 + D4 + D5) / 5"""
+        return round(
+            (self.d1_score + self.d2_score + self.d3_score + self.d4_score + self.d5_score) / 5, 2
+        )
+
+    @property
     def composite_bias(self) -> float:
-        return round((self.d1_score + self.d2_score + self.d3_score + self.d4_score) / 4, 2)
+        """Alias for GBS — retained for backward compatibility in viz/stats."""
+        return self.gbs
 
     def __repr__(self):
         return (
             f"<Analysis(id={self.id}, prompt={self.prompt_id}, model={self.model_config_id}, "
-            f"TR={self.tr_score}, D1={self.d1_score}, D2={self.d2_score}, "
-            f"D3={self.d3_score}, D4={self.d4_score})>"
+            f"TRS={self.trs}, GBS={self.gbs})>"
         )

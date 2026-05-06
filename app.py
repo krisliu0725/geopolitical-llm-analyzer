@@ -1,6 +1,7 @@
-"""Geopolitical LLM Response Analyzer — AI-powered scoring & analysis.
+"""Geopolitical LLM Response Analyzer — V2.0
 
 Tabs: Analyze | Experiment | Statistics | Settings
+Dual scoring system: TRS (T1-T5) + GBS (D1-D5) — 10 sub-dimensions
 Internationalized: 中文 / English
 """
 
@@ -15,15 +16,22 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy.orm import joinedload
 
-from config import SCORER_PROVIDERS, PROMPT_CATEGORIES, MODEL_ALIGNMENTS, TR_SCORE_LABELS, BIAS_DIMENSION_LABELS, BIAS_DIMENSION_SHORT
+from config import (
+    SCORER_PROVIDERS, PROMPT_CATEGORIES, MODEL_ALIGNMENTS,
+    TRS_DIMENSION_LABELS, GBS_DIMENSION_LABELS,
+    TRS_DIMENSION_SHORT, BIAS_DIMENSION_SHORT,
+)
 from database.connection import init_db, get_session
 from database.models import Prompt, ModelConfig, Analysis
 from i18n import t as tx
 from llm_clients import get_client
 from llm_clients.rate_limiter import RateLimiter
 from scoring.ai_scorer import score_response
-from scoring.statistics import analyses_to_dataframe, descriptive_stats_tr, descriptive_stats_bias, per_model_bias_profile
-from visualization.bar_charts import mean_tr_by_model, mean_bias_by_model_grouped
+from scoring.statistics import (
+    analyses_to_dataframe, descriptive_stats_trs, descriptive_stats_bias,
+    per_model_bias_profile,
+)
+from visualization.bar_charts import mean_trs_by_model, mean_bias_by_model_grouped
 from visualization.radar_charts import bias_radar_per_model, bias_radar_by_alignment
 from visualization.heatmaps import bias_heatmap, model_comparison_heatmap
 from export.excel_exporter import generate_workbook
@@ -68,9 +76,9 @@ h4 { font-size: 0.9rem !important; font-weight: 600 !important; color: hsl(22,8%
 .pro-china  { background:hsl(6,60%,93%);  color:hsl(6,55%,38%); }
 .mild-china { background:hsl(6,40%,95%);  color:hsl(6,45%,50%); }
 .neutral    { background:hsl(155,45%,92%); color:hsl(155,45%,32%); }
-.tr-high    { background:hsl(155,40%,92%); color:hsl(155,40%,30%); }
-.tr-mid     { background:hsl(38,45%,90%);  color:hsl(30,55%,32%); }
-.tr-low     { background:hsl(6,45%,93%);   color:hsl(6,45%,35%); }
+.trs-high   { background:hsl(155,40%,92%); color:hsl(155,40%,30%); }
+.trs-mid    { background:hsl(38,45%,90%);  color:hsl(30,55%,32%); }
+.trs-low    { background:hsl(6,45%,93%);   color:hsl(6,45%,35%); }
 
 /* ── Metric cards ── */
 .metric-card { background:hsl(38,30%,99%); border:1px solid hsl(38,16%,92%); border-radius:10px; padding:1.1rem 1.25rem; text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.03); }
@@ -242,10 +250,10 @@ def _clear_caches():
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _score_class(score: float, dim: str = "bias") -> str:
-    if dim == "tr":
-        if score >= 4.0: return "tr-high"
-        if score >= 3.0: return "tr-mid"
-        return "tr-low"
+    if dim == "trs":
+        if score >= 4.0: return "trs-high"
+        if score >= 3.0: return "trs-mid"
+        return "trs-low"
     if score <= 2.49:
         return "pro-west" if score <= 1.99 else "mild-west"
     if score >= 3.51:
@@ -274,9 +282,14 @@ def _save_analysis(prompt_mode, prompt_short, prompt_text, prompt_category,
         s.add(Analysis(
             prompt_id=saved_prompt.id, model_config_id=selected_model["id"],
             response_text=response_text,
-            tr_score=result["tr_score"],
+            # TRS sub-dimensions
+            t1_score=result["t1_score"], t2_score=result["t2_score"],
+            t3_score=result["t3_score"], t4_score=result["t4_score"],
+            t5_score=result["t5_score"],
+            # GBS sub-dimensions
             d1_score=result["d1_score"], d2_score=result["d2_score"],
             d3_score=result["d3_score"], d4_score=result["d4_score"],
+            d5_score=result["d5_score"],
             key_phrases=json.dumps(result.get("key_phrases", []), ensure_ascii=False),
             notes=notes, scorer_model=f"{scorer_provider}/{scorer_model}",
         ))
@@ -408,46 +421,80 @@ with t1:
 
         result = st.session_state.scoring_result
         if result:
+            # Compute composite scores
+            trs_val = round(sum(result[f"t{i}_score"] for i in range(1, 6)) / 5, 2)
+            gbs_val = round(sum(result[f"d{i}_score"] for i in range(1, 6)) / 5, 2)
+
             st.markdown("---")
             st.markdown(f"### 📊 {L('results_title')}")
             if st.session_state.scoring_latency:
                 st.caption(L("scored_in").format(elapsed=st.session_state.scoring_latency))
 
-            tr = result["tr_score"]
-            tr_class = _score_class(tr, "tr")
-            tr_label = TR_SCORE_LABELS.get(min(int(round(tr)), 5), list(TR_SCORE_LABELS.values())[0])
-
+            # ── TRS Card ──
+            trs_class = _score_class(trs_val, "trs")
             st.markdown(f"""
             <div class="card" style="border-left:3px solid hsl(22,68%,48%);">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-                    <span style="font-weight:650;font-size:1rem;">{L('tr_card_title')}</span>
-                    <span class="score-badge {tr_class}">{tr:.2f} / 5.00</span>
+                    <span style="font-weight:650;font-size:1rem;">{L('trs_card_title')}</span>
+                    <span class="score-badge {trs_class}" style="font-size:1.1rem;">{trs_val:.2f} / 5.00</span>
                 </div>
-                <p style="color:hsl(22,8%,45%);font-size:0.85rem;margin:0.25rem 0;">{tr_label}</p>
-                <p style="color:hsl(22,6%,60%);font-size:0.82rem;margin:0;">{result.get('tr_reasoning', '')}</p>
+                <p style="color:hsl(22,6%,60%);font-size:0.78rem;margin:0;">{L('trs_formula')}</p>
             </div>
             """, unsafe_allow_html=True)
 
-            dims = [("d1_score", "D1", "Responsibility"), ("d2_score", "D2", "Coverage"),
-                    ("d3_score", "D3", "Rule Citation"), ("d4_score", "D4", "Framing")]
-            dcols = st.columns(4)
-            for i, (dk, dl, ds) in enumerate(dims):
-                val = result[dk]
-                bc = _score_class(val)
-                with dcols[i]:
+            # T1-T5 mini cards
+            st.markdown(f"**{L('trs_sub_dims')}**")
+            tcols = st.columns(5)
+            for i in range(1, 6):
+                val = result[f"t{i}_score"]
+                with tcols[i - 1]:
                     st.markdown(f"""
-                    <div class="card" style="text-align:center;padding:1rem;">
-                        <div style="font-size:0.72rem;color:hsl(22,6%,60%);margin-bottom:0.3rem;font-weight:600;">{dl}</div>
-                        <span class="score-badge {bc}" style="font-size:1.05rem;">{val:.2f}</span>
-                        <div style="font-size:0.68rem;color:hsl(22,6%,60%);margin-top:0.3rem;">{ds}</div>
+                    <div class="card" style="text-align:center;padding:0.8rem 0.4rem;">
+                        <div style="font-size:0.72rem;color:hsl(22,6%,60%);margin-bottom:0.3rem;font-weight:600;">{L(f't{i}_label')}</div>
+                        <span style="font-weight:700;font-size:1.0rem;">{val:.2f}</span>
+                        <div style="font-size:0.65rem;color:hsl(22,6%,60%);margin-top:0.2rem;">{L(f't{i}_short')}</div>
                     </div>
                     """, unsafe_allow_html=True)
 
-            with st.expander(L("dim_reasoning_title")):
-                for dk, dl, _ in dims:
-                    rk = dk.replace("_score", "_reasoning")
-                    st.markdown(f"**{dl}** — {result.get(rk, '—')}")
+            # ── GBS Card ──
+            gbs_class = _score_class(gbs_val)
+            st.markdown(f"""
+            <div class="card" style="border-left:3px solid hsl(218,45%,48%);margin-top:0.8rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                    <span style="font-weight:650;font-size:1rem;">{L('gbs_card_title')}</span>
+                    <span class="score-badge {gbs_class}" style="font-size:1.1rem;">{gbs_val:.2f} / 5.00</span>
+                </div>
+                <p style="color:hsl(22,6%,60%);font-size:0.78rem;margin:0;">{L('gbs_formula')} · <3=Pro-West &nbsp; 3=Neutral &nbsp; >3=Pro-China</p>
+            </div>
+            """, unsafe_allow_html=True)
 
+            # D1-D5 mini cards
+            st.markdown(f"**{L('gbs_sub_dims')}**")
+            dcols = st.columns(5)
+            for i in range(1, 6):
+                val = result[f"d{i}_score"]
+                bc = _score_class(val)
+                with dcols[i - 1]:
+                    st.markdown(f"""
+                    <div class="card" style="text-align:center;padding:0.8rem 0.4rem;">
+                        <div style="font-size:0.72rem;color:hsl(22,6%,60%);margin-bottom:0.3rem;font-weight:600;">{L(f'd{i}_label')}</div>
+                        <span class="score-badge {bc}">{val:.2f}</span>
+                        <div style="font-size:0.65rem;color:hsl(22,6%,60%);margin-top:0.2rem;">{L(f'd{i}_short')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # Reasoning expander
+            with st.expander(L("dim_reasoning_title")):
+                st.markdown("**TRS**")
+                for i in range(1, 6):
+                    rkey = f"t{i}_reasoning"
+                    st.markdown(f"**T{i}** — {result.get(rkey, '—')}")
+                st.markdown("**GBS**")
+                for i in range(1, 6):
+                    rkey = f"d{i}_reasoning"
+                    st.markdown(f"**D{i}** — {result.get(rkey, '—')}")
+
+            # Key phrases
             if result.get("key_phrases"):
                 st.markdown(f"### 🔑 {L('key_phrases_title')}")
                 kp_rows = [{L("kp_dim"): kp.get("dimension", ""), L("kp_quote"): kp.get("phrase", ""),
@@ -512,11 +559,16 @@ with t2:
 
         with st.expander(L("comparison_title"), expanded=False):
             metric_choice = st.radio(L("comparison_metric"),
-                                     [L("metric_tr"), L("metric_bias"), L("metric_d1"), L("metric_d2"), L("metric_d3"), L("metric_d4")],
+                                     [L("metric_trs"), L("metric_gbs"),
+                                      L("metric_d1"), L("metric_d2"), L("metric_d3"),
+                                      L("metric_d4"), L("metric_d5")],
                                      horizontal=True, key="comp_metric")
-            metric_map = {L("metric_tr"): "tr_score", L("metric_bias"): "composite_bias",
-                          L("metric_d1"): "d1_score", L("metric_d2"): "d2_score",
-                          L("metric_d3"): "d3_score", L("metric_d4"): "d4_score"}
+            metric_map = {
+                L("metric_trs"): "trs", L("metric_gbs"): "gbs",
+                L("metric_d1"): "d1_score", L("metric_d2"): "d2_score",
+                L("metric_d3"): "d3_score", L("metric_d4"): "d4_score",
+                L("metric_d5"): "d5_score",
+            }
             metric_col = metric_map[metric_choice]
             pivot = df_filt.pivot_table(index="prompt_name", columns="model_name", values=metric_col, aggfunc="mean")
             if not pivot.empty:
@@ -528,12 +580,20 @@ with t2:
                 st.markdown("---")
                 st.markdown(f"### {L('detail_title')}")
                 dc1, dc2, dc3 = st.columns(3)
-                with dc1: st.metric(L("detail_tr_score"), f"{detail.tr_score:.2f}")
-                with dc2: st.metric(L("detail_composite"), f"{detail.composite_bias:.2f}")
+                with dc1: st.metric(L("detail_trs"), f"{detail.trs:.2f}")
+                with dc2: st.metric(L("detail_gbs"), f"{detail.gbs:.2f}")
                 with dc3: st.metric(L("detail_scorer"), detail.scorer_model or "N/A")
-                ddc = st.columns(4)
-                for i, dk in enumerate(["d1_score", "d2_score", "d3_score", "d4_score"]):
-                    with ddc[i]: st.metric(BIAS_DIMENSION_SHORT[i], f"{getattr(detail, dk):.2f}")
+
+                st.markdown(f"**TRS Sub-Dimensions**")
+                tdc = st.columns(5)
+                for i in range(1, 6):
+                    with tdc[i - 1]: st.metric(f"T{i}", f"{getattr(detail, f't{i}_score'):.2f}")
+
+                st.markdown(f"**GBS Sub-Dimensions**")
+                ddc = st.columns(5)
+                for i in range(1, 6):
+                    with ddc[i - 1]: st.metric(f"D{i}", f"{getattr(detail, f'd{i}_score'):.2f}")
+
                 if detail.prompt:
                     st.markdown(f"**{L('detail_prompt')}:** {detail.prompt.full_text}")
                 st.markdown(f"**{L('detail_response')}:**")
@@ -554,12 +614,12 @@ with t2:
 
         st.markdown(f"### {L('all_analyses_title')}")
         display = df_filt[["analysis_id", "prompt_name", "prompt_category", "model_name",
-                           "alignment", "tr_score", "d1_score", "d2_score", "d3_score", "d4_score",
-                           "composite_bias", "scorer_model", "analyzed_at"]].copy()
+                           "alignment", "trs", "d1_score", "d2_score", "d3_score", "d4_score",
+                           "d5_score", "gbs", "scorer_model", "analyzed_at"]].copy()
         display.columns = [L("col_id"), L("col_question"), L("col_cat"), L("col_model"),
-                           L("col_align"), L("col_tr"), L("col_d1"), L("col_d2"), L("col_d3"),
-                           L("col_d4"), L("col_bias"), L("col_scorer"), L("col_date")]
-        for c in [L("col_tr"), L("col_d1"), L("col_d2"), L("col_d3"), L("col_d4"), L("col_bias")]:
+                           L("col_align"), L("col_trs"), L("col_d1"), L("col_d2"), L("col_d3"),
+                           L("col_d4"), L("col_d5"), L("col_gbs"), L("col_scorer"), L("col_date")]
+        for c in [L("col_trs"), L("col_d1"), L("col_d2"), L("col_d3"), L("col_d4"), L("col_d5"), L("col_gbs")]:
             display[c] = display[c].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
         display[L("col_date")] = display[L("col_date")].apply(lambda x: str(x)[:10] if pd.notna(x) else "")
 
@@ -603,16 +663,16 @@ with t3:
             (str(len(df)), L("card_total")),
             (str(df["prompt_name"].nunique()), L("card_questions")),
             (str(df["model_name"].nunique()), L("card_models")),
-            (f"{df['tr_score'].mean():.2f}", L("card_avg_tr")),
-            (f"{df['composite_bias'].mean():.2f}", L("card_avg_bias")),
+            (f"{df['trs'].mean():.2f}", L("card_avg_trs")),
+            (f"{df['gbs'].mean():.2f}", L("card_avg_gbs")),
             (f"🔵{us_n}  🔴{cn_n}", L("card_us_cn")),
         ]
         for mc, (val, label) in zip(st.columns(6), cards):
             with mc:
                 st.markdown(f'<div class="metric-card"><div class="metric-value">{val}</div><div class="metric-label">{label}</div></div>', unsafe_allow_html=True)
 
-        st.markdown(f"#### {L('tr_stats_title')}")
-        st.table(descriptive_stats_tr(df))
+        st.markdown(f"#### {L('trs_stats_title')}")
+        st.table(descriptive_stats_trs(df))
 
         st.markdown(f"#### {L('bias_stats_title')}")
         st.table(descriptive_stats_bias(df))
@@ -624,16 +684,18 @@ with t3:
         st.markdown(f"### 📊 {L('viz_title')}")
 
         c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(mean_tr_by_model(descriptive_stats_tr(df)), use_container_width=True)
+        with c1: st.plotly_chart(mean_trs_by_model(descriptive_stats_trs(df)), use_container_width=True)
         with c2: st.plotly_chart(mean_bias_by_model_grouped(descriptive_stats_bias(df)), use_container_width=True)
         st.plotly_chart(bias_radar_per_model(per_model_bias_profile(df)), use_container_width=True)
 
         hc1, hc2 = st.columns(2)
         with hc1: st.plotly_chart(bias_heatmap(per_model_bias_profile(df)), use_container_width=True)
         with hc2:
-            dim_pick = st.selectbox(L("viz_dim_choice"), ["tr_score", "d1_score", "d2_score", "d3_score", "d4_score"],
-                                    format_func=lambda x: {"tr_score": "TR", "d1_score": "D1", "d2_score": "D2",
-                                                           "d3_score": "D3", "d4_score": "D4"}[x], key="stat_dim")
+            sd_options = ["trs", "gbs", "d1_score", "d2_score", "d3_score", "d4_score", "d5_score"]
+            sd_labels = {"trs": "TRS", "gbs": "GBS", "d1_score": "D1", "d2_score": "D2",
+                        "d3_score": "D3", "d4_score": "D4", "d5_score": "D5"}
+            dim_pick = st.selectbox(L("viz_dim_choice"), sd_options,
+                                    format_func=lambda x: sd_labels[x], key="stat_dim")
             st.plotly_chart(model_comparison_heatmap(df, dim_pick), use_container_width=True)
 
         profile = per_model_bias_profile(df)

@@ -35,11 +35,13 @@ def init_db():
 
     os.makedirs(DATABASE_PATH.parent, exist_ok=True)
 
-    # Clean up tables from the previous schema
+    # Clean up tables from old schemas
     with engine.connect() as conn:
         conn.execute(text("DROP TABLE IF EXISTS tr_scores"))
         conn.execute(text("DROP TABLE IF EXISTS bias_scores"))
         conn.execute(text("DROP TABLE IF EXISTS responses"))
+        # V2.0 schema migration: old analyses had tr_score + d1-d4 only
+        conn.execute(text("DROP TABLE IF EXISTS analyses"))
         conn.commit()
 
     Base.metadata.create_all(bind=engine)

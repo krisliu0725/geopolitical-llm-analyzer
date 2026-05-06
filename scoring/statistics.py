@@ -1,18 +1,18 @@
-"""Descriptive statistics for the Analysis-based data model."""
+"""Descriptive statistics for the V2.0 Analysis data model — TRS + GBS."""
 
 from __future__ import annotations
 
 import pandas as pd
 
 
-def descriptive_stats_tr(analyses_df: pd.DataFrame) -> pd.DataFrame:
-    """Per-model TR score statistics from analyses DataFrame.
+def descriptive_stats_trs(analyses_df: pd.DataFrame) -> pd.DataFrame:
+    """Per-model TRS statistics from analyses DataFrame.
 
-    Expects columns: model_name, tr_score
+    Expects columns: model_name, trs (composite TRS = avg of T1-T5)
     Returns DataFrame: model, n, mean, std, min, max, median
     """
     stats = (
-        analyses_df.groupby("model_name")["tr_score"]
+        analyses_df.groupby("model_name")["trs"]
         .agg(n="count", mean="mean", std="std", min="min", max="max", median="median")
         .reset_index()
     )
@@ -26,13 +26,13 @@ def descriptive_stats_tr(analyses_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def descriptive_stats_bias(analyses_df: pd.DataFrame) -> pd.DataFrame:
-    """Per-model bias dimension statistics.
+    """Per-model GBS dimension statistics — V2.0 with D5.
 
-    Expects columns: model_name, d1_score, d2_score, d3_score, d4_score
-    Returns DataFrame: model, D1_mean, D1_std, ..., D4_mean, D4_std, composite_bias, n
+    Expects columns: model_name, d1_score, d2_score, d3_score, d4_score, d5_score
+    Returns DataFrame: model, D1_mean, D1_std, ..., D5_mean, D5_std, gbs, n
     """
-    dims = ["d1_score", "d2_score", "d3_score", "d4_score"]
-    dim_labels = ["D1", "D2", "D3", "D4"]
+    dims = ["d1_score", "d2_score", "d3_score", "d4_score", "d5_score"]
+    dim_labels = ["D1", "D2", "D3", "D4", "D5"]
 
     aggs = {}
     for key, label in zip(dims, dim_labels):
@@ -48,18 +48,21 @@ def descriptive_stats_bias(analyses_df: pd.DataFrame) -> pd.DataFrame:
             stats[col] = stats[col].round(2)
 
     mean_cols = [f"{l}_mean" for l in dim_labels]
-    stats["Composite Bias"] = stats[mean_cols].mean(axis=1).round(2)
+    stats["GBS"] = stats[mean_cols].mean(axis=1).round(2)
 
-    return stats.sort_values("Composite Bias", ascending=False)
+    return stats.sort_values("GBS", ascending=False)
 
 
 def per_model_bias_profile(analyses_df: pd.DataFrame) -> pd.DataFrame:
-    """Per-model bias profile with D1-D4 means and composite.
+    """Per-model bias profile with D1-D5 means and GBS composite.
 
-    Expects columns: model_name, alignment, d1_score, d2_score, d3_score, d4_score
+    Expects columns: model_name, alignment, d1_score, d2_score, d3_score, d4_score, d5_score
     """
-    dims = ["d1_score", "d2_score", "d3_score", "d4_score"]
-    labels = ["D1: Responsibility", "D2: Coverage", "D3: Rule Citation", "D4: Framing"]
+    dims = ["d1_score", "d2_score", "d3_score", "d4_score", "d5_score"]
+    labels = [
+        "D1: Blame", "D2: Coverage", "D3: Rules",
+        "D4: Framing", "D5: Lexical",
+    ]
 
     aggs = {}
     for key, label in zip(dims, labels):
@@ -68,22 +71,22 @@ def per_model_bias_profile(analyses_df: pd.DataFrame) -> pd.DataFrame:
     aggs["Alignment"] = ("alignment", "first")
 
     profile = analyses_df.groupby("model_name").agg(**aggs).reset_index()
-    profile.columns = ["Model"] + [f"D{i+1}_mean" for i in range(4)] + ["N", "Alignment"]
+    profile.columns = ["Model"] + [f"D{i+1}_mean" for i in range(5)] + ["N", "Alignment"]
 
-    for c in ["D1_mean", "D2_mean", "D3_mean", "D4_mean"]:
+    for c in [f"D{i+1}_mean" for i in range(5)]:
         profile[c] = profile[c].round(2)
 
-    profile["Composite"] = profile[
-        ["D1_mean", "D2_mean", "D3_mean", "D4_mean"]
+    profile["GBS"] = profile[
+        ["D1_mean", "D2_mean", "D3_mean", "D4_mean", "D5_mean"]
     ].mean(axis=1).round(2)
 
-    return profile.sort_values("Composite", ascending=False)
+    return profile.sort_values("GBS", ascending=False)
 
 
 def analyses_to_dataframe(analyses: list) -> pd.DataFrame:
     """Convert a list of Analysis ORM objects into a flat DataFrame for stats/viz.
 
-    Joins with prompt and model_config to include metadata.
+    Joins with prompt and model_config to include metadata. V2.0.
     """
     rows = []
     for a in analyses:
@@ -98,11 +101,20 @@ def analyses_to_dataframe(analyses: list) -> pd.DataFrame:
             "model_provider": a.model_config.provider if a.model_config else "N/A",
             "alignment": a.model_config.alignment if a.model_config else "Other/Unknown",
             "response_text": a.response_text,
-            "tr_score": a.tr_score,
+            # TRS sub-dimensions
+            "t1_score": a.t1_score,
+            "t2_score": a.t2_score,
+            "t3_score": a.t3_score,
+            "t4_score": a.t4_score,
+            "t5_score": a.t5_score,
+            "trs": a.trs,
+            # GBS sub-dimensions
             "d1_score": a.d1_score,
             "d2_score": a.d2_score,
             "d3_score": a.d3_score,
             "d4_score": a.d4_score,
+            "d5_score": a.d5_score,
+            "gbs": a.gbs,
             "composite_bias": a.composite_bias,
             "key_phrases": a.key_phrases,
             "notes": a.notes,
