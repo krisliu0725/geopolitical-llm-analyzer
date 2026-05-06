@@ -83,3 +83,19 @@ MODEL_ALIGNMENTS = ["US/Western", "China/Non-Western", "Other/Unknown"]
 # Rate limiting
 MIN_API_INTERVAL_SEC = 1.0
 MAX_RETRIES = 3
+
+# Map score column names to human-readable labels (tidy/long-format export, viz)
+SCORE_DIMENSION_LABELS = {
+    "t1_score": "T1: Completeness",
+    "t2_score": "T2: Core Engagement",
+    "t3_score": "T3: Specificity",
+    "t4_score": "T4: Confrontation",
+    "t5_score": "T5: Evasion Penalty",
+    "d1_score": "D1: Blame Attribution",
+    "d2_score": "D2: Coverage Balance",
+    "d3_score": "D3: Normative Framework",
+    "d4_score": "D4: Concluding Sentiment",
+    "d5_score": "D5: Lexical Framing",
+    "trs": "TRS (Composite)",
+    "gbs": "GBS (Composite)",
+}

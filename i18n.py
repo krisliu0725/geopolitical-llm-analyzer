@@ -149,8 +149,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "viz_dim_choice": "Score dimension",
         "export_title": "Export",
         "export_btn": "Generate Excel Report",
-        "export_download": "Download Excel Report",
+        "export_download": "Download Excel (.xlsx)",
+        "export_csv_download": "Download CSV (.csv)",
         "no_analyses_stats": "No analyses yet. Score responses in **Analyze** first.",
+
+        # Data filters
+        "viz_filter_title": "Data Filters",
+        "viz_filter_prompts": "Filter by Question",
+        "viz_filter_alignments": "Filter by Alignment",
+
+        # Advanced charts
+        "viz_advanced_title": "Advanced Charts",
+        "viz_line_title": "Dimension Profile Lines",
+        "viz_distribution_title": "Score Distributions",
+        "viz_violin_dim": "Violin Plot",
+        "viz_density_dim": "Density Plot",
+        "viz_pie_type": "Pie Chart",
+        "viz_pie_alignment": "Alignment",
+        "viz_pie_category": "Category",
 
         # Settings tab
         "settings_title": "Settings",
@@ -339,8 +355,24 @@ STRINGS: dict[str, dict[str, str]] = {
         "viz_dim_choice": "评分维度",
         "export_title": "导出",
         "export_btn": "生成 Excel 报告",
-        "export_download": "下载 Excel 报告",
+        "export_download": "下载 Excel (.xlsx)",
+        "export_csv_download": "下载 CSV (.csv)",
         "no_analyses_stats": "暂无分析数据，请先在**分析**页面评分。",
+
+        # Data filters
+        "viz_filter_title": "数据筛选",
+        "viz_filter_prompts": "按问题筛选",
+        "viz_filter_alignments": "按立场筛选",
+
+        # Advanced charts
+        "viz_advanced_title": "高级图表",
+        "viz_line_title": "维度轮廓折线图",
+        "viz_distribution_title": "得分分布图",
+        "viz_violin_dim": "小提琴图",
+        "viz_density_dim": "密度图",
+        "viz_pie_type": "饼图",
+        "viz_pie_alignment": "立场分布",
+        "viz_pie_category": "分类分布",
 
         # Settings tab
         "settings_title": "设置",

@@ -34,7 +34,12 @@ from scoring.statistics import (
 from visualization.bar_charts import mean_trs_by_model, mean_bias_by_model_grouped
 from visualization.radar_charts import bias_radar_per_model, bias_radar_by_alignment
 from visualization.heatmaps import bias_heatmap, model_comparison_heatmap
-from export.excel_exporter import generate_workbook
+from visualization.line_charts import dimension_profile_lines, trs_dimension_profile_lines
+from visualization.distribution_charts import (
+    trs_box_plot, dimension_violin_plot, density_histogram,
+    alignment_pie_chart, category_pie_chart,
+)
+from export.excel_exporter import generate_workbook, generate_raw_csv
 
 # ── Page config ────────────────────────────────────────────────────────────
 
@@ -660,15 +665,39 @@ with t3:
     if df.empty:
         st.info(L("no_analyses_stats"))
     else:
+        # ── Data Filters ──
+        with st.expander(L("viz_filter_title"), expanded=True):
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                all_prompts = sorted(df["prompt_name"].unique().tolist())
+                selected_prompts = st.multiselect(
+                    L("viz_filter_prompts"), options=all_prompts,
+                    default=all_prompts, key="stat_filter_prompts",
+                )
+            with fc2:
+                all_alignments = sorted(df["alignment"].unique().tolist())
+                selected_alignments = st.multiselect(
+                    L("viz_filter_alignments"), options=all_alignments,
+                    default=all_alignments, key="stat_filter_alignments",
+                )
+        mask = pd.Series(True, index=df.index)
+        if selected_prompts:
+            mask &= df["prompt_name"].isin(selected_prompts)
+        if selected_alignments:
+            mask &= df["alignment"].isin(selected_alignments)
+        df_filt = df[mask]
+        st.caption(L("showing_n").format(n=len(df_filt), total=len(df)))
+
+        # ── Overview ──
         st.markdown(f"#### {L('overview_title')}")
-        us_n = int((df["alignment"] == "US/Western").sum())
-        cn_n = int((df["alignment"] == "China/Non-Western").sum())
+        us_n = int((df_filt["alignment"] == "US/Western").sum())
+        cn_n = int((df_filt["alignment"] == "China/Non-Western").sum())
         cards = [
-            (str(len(df)), L("card_total")),
-            (str(df["prompt_name"].nunique()), L("card_questions")),
-            (str(df["model_name"].nunique()), L("card_models")),
-            (f"{df['trs'].mean():.2f}", L("card_avg_trs")),
-            (f"{df['gbs'].mean():.2f}", L("card_avg_gbs")),
+            (str(len(df_filt)), L("card_total")),
+            (str(df_filt["prompt_name"].nunique()), L("card_questions")),
+            (str(df_filt["model_name"].nunique()), L("card_models")),
+            (f"{df_filt['trs'].mean():.2f}", L("card_avg_trs")),
+            (f"{df_filt['gbs'].mean():.2f}", L("card_avg_gbs")),
             (f"🔵{us_n}  🔴{cn_n}", L("card_us_cn")),
         ]
         for mc, (val, label) in zip(st.columns(6), cards):
@@ -676,43 +705,105 @@ with t3:
                 st.markdown(f'<div class="metric-card"><div class="metric-value">{val}</div><div class="metric-label">{label}</div></div>', unsafe_allow_html=True)
 
         st.markdown(f"#### {L('trs_stats_title')}")
-        st.table(descriptive_stats_trs(df))
+        st.table(descriptive_stats_trs(df_filt))
 
         st.markdown(f"#### {L('bias_stats_title')}")
-        st.table(descriptive_stats_bias(df))
+        st.table(descriptive_stats_bias(df_filt))
 
         st.markdown(f"#### {L('profile_title')}")
-        st.table(per_model_bias_profile(df))
+        st.table(per_model_bias_profile(df_filt))
 
+        # ── Basic Charts ──
         st.markdown("---")
         st.markdown(f"### 📊 {L('viz_title')}")
 
         c1, c2 = st.columns(2)
-        with c1: st.plotly_chart(mean_trs_by_model(descriptive_stats_trs(df)), use_container_width=True)
-        with c2: st.plotly_chart(mean_bias_by_model_grouped(descriptive_stats_bias(df)), use_container_width=True)
-        st.plotly_chart(bias_radar_per_model(per_model_bias_profile(df)), use_container_width=True)
+        with c1: st.plotly_chart(mean_trs_by_model(descriptive_stats_trs(df_filt)), use_container_width=True)
+        with c2: st.plotly_chart(mean_bias_by_model_grouped(descriptive_stats_bias(df_filt)), use_container_width=True)
+        st.plotly_chart(bias_radar_per_model(per_model_bias_profile(df_filt)), use_container_width=True)
 
         hc1, hc2 = st.columns(2)
-        with hc1: st.plotly_chart(bias_heatmap(per_model_bias_profile(df)), use_container_width=True)
+        with hc1: st.plotly_chart(bias_heatmap(per_model_bias_profile(df_filt)), use_container_width=True)
         with hc2:
             sd_options = ["trs", "gbs", "d1_score", "d2_score", "d3_score", "d4_score", "d5_score"]
             sd_labels = {"trs": "TRS", "gbs": "GBS", "d1_score": "D1", "d2_score": "D2",
                         "d3_score": "D3", "d4_score": "D4", "d5_score": "D5"}
             dim_pick = st.selectbox(L("viz_dim_choice"), sd_options,
                                     format_func=lambda x: sd_labels[x], key="stat_dim")
-            st.plotly_chart(model_comparison_heatmap(df, dim_pick), use_container_width=True)
+            st.plotly_chart(model_comparison_heatmap(df_filt, dim_pick), use_container_width=True)
 
-        profile = per_model_bias_profile(df)
+        profile = per_model_bias_profile(df_filt)
         if "Alignment" in profile.columns and profile["Alignment"].nunique() > 1:
             st.plotly_chart(bias_radar_by_alignment(profile), use_container_width=True)
 
+        # ── Advanced Charts ──
+        st.markdown("---")
+        st.markdown(f"### {L('viz_advanced_title')}")
+
+        # Row 1: Line charts
+        st.markdown(f"#### {L('viz_line_title')}")
+        lc1, lc2 = st.columns(2)
+        with lc1:
+            st.plotly_chart(dimension_profile_lines(df_filt), use_container_width=True)
+        with lc2:
+            st.plotly_chart(trs_dimension_profile_lines(df_filt), use_container_width=True)
+
+        # Row 2: Box + Violin
+        st.markdown(f"#### {L('viz_distribution_title')}")
+        dc1, dc2 = st.columns(2)
+        with dc1:
+            st.plotly_chart(trs_box_plot(df_filt), use_container_width=True)
+        with dc2:
+            violin_dim = st.selectbox(
+                L("viz_violin_dim"),
+                ["gbs", "d1_score", "d2_score", "d3_score", "d4_score", "d5_score"],
+                format_func=lambda x: {
+                    "gbs": "GBS", "d1_score": "D1", "d2_score": "D2",
+                    "d3_score": "D3", "d4_score": "D4", "d5_score": "D5",
+                }[x],
+                key="stat_violin_dim",
+            )
+            st.plotly_chart(dimension_violin_plot(df_filt, violin_dim), use_container_width=True)
+
+        # Row 3: Density + Pie
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            density_dim = st.selectbox(
+                L("viz_density_dim"),
+                ["trs", "gbs"],
+                format_func=lambda x: {"trs": "TRS", "gbs": "GBS"}[x],
+                key="stat_density_dim",
+            )
+            st.plotly_chart(density_histogram(df_filt, density_dim), use_container_width=True)
+        with ec2:
+            pie_type = st.radio(
+                L("viz_pie_type"),
+                ["alignment", "category"],
+                format_func=lambda x: L(f"viz_pie_{x}"),
+                horizontal=True,
+                key="stat_pie_type",
+            )
+            if pie_type == "alignment":
+                st.plotly_chart(alignment_pie_chart(df_filt), use_container_width=True)
+            else:
+                st.plotly_chart(category_pie_chart(df_filt), use_container_width=True)
+
+        # ── Export ──
         st.markdown("---")
         st.markdown(f"### 📥 {L('export_title')}")
-        if st.button(L("export_btn"), type="primary"):
-            buf = generate_workbook(analyses_df=df, prompts_df=prompts_df, model_configs_df=models_df)
-            st.download_button(L("export_download"), data=buf,
-                               file_name=f"geopolitical_llm_analysis_{datetime.now():%Y%m%d_%H%M%S}.xlsx",
-                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            if st.button(L("export_btn"), type="primary", use_container_width=True):
+                buf = generate_workbook(analyses_df=df_filt, prompts_df=prompts_df, model_configs_df=models_df)
+                st.download_button(L("export_download"), data=buf,
+                                   file_name=f"geopolitical_llm_analysis_{datetime.now():%Y%m%d_%H%M%S}.xlsx",
+                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                   key="dl_excel")
+        with ec2:
+            csv_data = generate_raw_csv(df_filt)
+            st.download_button(L("export_csv_download"), data=csv_data,
+                               file_name=f"geopolitical_llm_raw_data_{datetime.now():%Y%m%d_%H%M%S}.csv",
+                               mime="text/csv", key="dl_csv")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # TAB 4 — SETTINGS

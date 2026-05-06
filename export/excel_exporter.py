@@ -14,6 +14,7 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from config import (
     TR_SCORE_LABELS, BIAS_SCORE_LABELS,
     TRS_DIMENSION_LABELS, GBS_DIMENSION_LABELS,
+    SCORE_DIMENSION_LABELS,
 )
 
 HEADER_FONT = Font(bold=True, size=11, color="FFFFFF")
@@ -58,28 +59,31 @@ def generate_workbook(
 
     wb = Workbook()
 
-    # ---- Sheet 1: All Scores (wide) ----
+    # ---- Sheet 1: Raw Data (all columns, wide) ----
     ws1 = wb.active
-    ws1.title = "All Scores"
+    ws1.title = "Raw Data"
 
     score_cols = [
-        "analysis_id", "prompt_name", "prompt_category", "model_name",
-        "alignment", "response_text",
+        "analysis_id", "prompt_id", "prompt_name", "prompt_category", "prompt_text",
+        "model_config_id", "model_name", "model_provider", "alignment", "response_text",
         "t1_score", "t2_score", "t3_score", "t4_score", "t5_score", "trs",
         "d1_score", "d2_score", "d3_score", "d4_score", "d5_score", "gbs",
-        "scorer_model", "notes", "analyzed_at",
+        "key_phrases", "notes", "scorer_model", "analyzed_at",
+    ]
+    score_headers = [
+        "Analysis ID", "Prompt ID", "Prompt Name", "Category", "Prompt Full Text",
+        "Model Config ID", "Model Name", "Provider", "Alignment", "Response Text",
+        "T1: Completeness (1-5)", "T2: Core Engagement (1-5)", "T3: Specificity (1-5)",
+        "T4: Confrontation (1-5)", "T5: Evasion Penalty (1-5)", "TRS Composite (1-5)",
+        "D1: Blame Attribution (1-5)", "D2: Coverage Balance (1-5)",
+        "D3: Normative Framework (1-5)", "D4: Concluding Sentiment (1-5)",
+        "D5: Lexical Framing (1-5)", "GBS Composite (1-5)",
+        "Key Phrases (JSON)", "Notes", "Scorer Model", "Analyzed At",
     ]
     available = [c for c in score_cols if c in analyses_df.columns]
     display = analyses_df[available].copy()
-    display.columns = [
-        "Analysis ID", "Prompt", "Category", "Model", "Alignment",
-        "Response Text",
-        "T1: Completeness", "T2: Core Engagement", "T3: Specificity",
-        "T4: Confrontation", "T5: Evasion Penalty", "TRS Composite",
-        "D1: Blame", "D2: Coverage", "D3: Rules",
-        "D4: Framing", "D5: Lexical", "GBS Composite",
-        "Scorer Model", "Notes", "Analyzed At",
-    ][:len(available)]
+    header_map = dict(zip(score_cols, score_headers))
+    display.columns = [header_map.get(c, c) for c in available]
 
     for r in dataframe_to_rows(display, index=False, header=True):
         ws1.append(r)
@@ -210,7 +214,65 @@ def generate_workbook(
     _style_header(ws6, 2)
     _auto_width(ws6, min_width=20, max_width=80)
 
+    # ---- Sheet 7: Score Dimensions (Tidy / Long Format) ----
+    ws7 = wb.create_sheet("Score Dimensions (Tidy)")
+    id_vars = ["analysis_id", "prompt_name", "model_name", "alignment", "analyzed_at"]
+    value_vars = [
+        "t1_score", "t2_score", "t3_score", "t4_score", "t5_score",
+        "d1_score", "d2_score", "d3_score", "d4_score", "d5_score",
+        "trs", "gbs",
+    ]
+    available_vars = [v for v in value_vars if v in analyses_df.columns]
+    available_ids = [v for v in id_vars if v in analyses_df.columns]
+    melted = analyses_df[available_ids + available_vars].melt(
+        id_vars=available_ids, value_vars=available_vars,
+        var_name="Dimension", value_name="Score",
+    )
+    melted["Dimension"] = melted["Dimension"].map(
+        lambda x: SCORE_DIMENSION_LABELS.get(x, x)
+    )
+    melted["Score"] = melted["Score"].round(2)
+    melted.columns = ["Analysis ID", "Prompt", "Model", "Alignment", "Analyzed At",
+                       "Dimension", "Score"]
+
+    for r in dataframe_to_rows(melted, index=False, header=True):
+        ws7.append(r)
+    _style_header(ws7, len(melted.columns))
+    _auto_width(ws7)
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
     return output
+
+
+ALL_SCORE_COLS = [
+    "analysis_id", "prompt_id", "prompt_name", "prompt_category", "prompt_text",
+    "model_config_id", "model_name", "model_provider", "alignment", "response_text",
+    "t1_score", "t2_score", "t3_score", "t4_score", "t5_score", "trs",
+    "d1_score", "d2_score", "d3_score", "d4_score", "d5_score", "gbs",
+    "key_phrases", "notes", "scorer_model", "analyzed_at",
+]
+
+ALL_SCORE_HEADERS = [
+    "Analysis ID", "Prompt ID", "Prompt Name", "Category", "Prompt Full Text",
+    "Model Config ID", "Model Name", "Provider", "Alignment", "Response Text",
+    "T1: Completeness (1-5)", "T2: Core Engagement (1-5)", "T3: Specificity (1-5)",
+    "T4: Confrontation (1-5)", "T5: Evasion Penalty (1-5)", "TRS Composite (1-5)",
+    "D1: Blame Attribution (1-5)", "D2: Coverage Balance (1-5)",
+    "D3: Normative Framework (1-5)", "D4: Concluding Sentiment (1-5)",
+    "D5: Lexical Framing (1-5)", "GBS Composite (1-5)",
+    "Key Phrases (JSON)", "Notes", "Scorer Model", "Analyzed At",
+]
+
+
+def generate_raw_csv(analyses_df: pd.DataFrame) -> str:
+    """Export analyses as UTF-8 CSV with BOM (Excel-compatible with CJK characters)."""
+    cols = [c for c in ALL_SCORE_COLS if c in analyses_df.columns]
+    export_df = analyses_df[cols].copy()
+    header_map = dict(zip(ALL_SCORE_COLS, ALL_SCORE_HEADERS))
+    export_df.columns = [header_map.get(c, c) for c in export_df.columns]
+    for col in export_df.columns:
+        if export_df[col].dtype == "float64":
+            export_df[col] = export_df[col].round(2)
+    return export_df.to_csv(index=False, encoding="utf-8-sig")
