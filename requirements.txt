@@ -1,0 +1,11 @@
+streamlit>=1.40.0
+sqlalchemy>=2.0
+pandas>=2.0
+numpy>=1.26
+plotly>=5.18
+openpyxl>=3.1
+pingouin>=0.5
+statsmodels>=0.14
+openai>=1.50
+google-genai>=1.0
+python-dotenv>=1.0
